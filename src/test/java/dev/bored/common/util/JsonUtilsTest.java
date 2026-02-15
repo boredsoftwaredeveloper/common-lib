@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class JsonUtilsTest {
 
@@ -26,13 +27,16 @@ class JsonUtilsTest {
 
     @Test
     void toJson_throwsOnUnserializable() {
-        Object bad = new Object() {
-            @SuppressWarnings("unused")
-            public Object getSelf() { return this; }
-        };
-        // Jackson will fail on self-referencing objects
-        // but simple Object() serializes fine, so we rely on the positive tests
-        // Just ensure the method doesn't throw on valid input
+        // Create a self-referencing object that Jackson cannot serialize
+        Object[] selfRef = new Object[1];
+        selfRef[0] = selfRef;
+        assertThatThrownBy(() -> JsonUtils.toJson(selfRef))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Failed to serialize");
+    }
+
+    @Test
+    void toJson_serializesSimpleString() {
         assertThat(JsonUtils.toJson("simple")).isEqualTo("\"simple\"");
     }
 

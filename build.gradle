@@ -26,32 +26,22 @@ dependencyManagement {
 }
 
 dependencies {
-    // Spring (provided — each service brings its own starter)
-    compileOnly 'org.springframework:spring-web'
-    compileOnly 'org.springframework:spring-webflux'
-    compileOnly 'org.springframework:spring-context'
-    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    // ── Transitive (consumers get these automatically) ───────
+    api 'org.springframework:spring-web'
+    api 'org.springframework:spring-context'
+    api 'org.springframework.security:spring-security-core'
+    api 'org.springframework.security:spring-security-oauth2-jose'
+    api 'com.fasterxml.jackson.core:jackson-databind'
+    api 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    api 'jakarta.validation:jakarta.validation-api'
+    api 'org.slf4j:slf4j-api'
 
-    // Spring Security (provided)
-    compileOnly 'org.springframework.security:spring-security-core'
-    compileOnly 'org.springframework.security:spring-security-config'
-    compileOnly 'org.springframework.security:spring-security-oauth2-jose'
-
-    // Jakarta validation (provided)
-    compileOnly 'jakarta.validation:jakarta.validation-api'
-
-    // SLF4J (provided)
-    compileOnly 'org.slf4j:slf4j-api'
-
-    // Lombok
+    // Lombok (compile-time only — each service needs its own)
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
     // ── Testing ──────────────────────────────────────────────
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.springframework:spring-web'
-    testImplementation 'org.springframework:spring-webflux'
-    testImplementation 'org.springframework.security:spring-security-core'
     testImplementation 'org.springframework.security:spring-security-oauth2-jose'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
