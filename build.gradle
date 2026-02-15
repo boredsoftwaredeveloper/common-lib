@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'dev.bored'
-version = '0.0.1-SNAPSHOT'
+version = '0.0.1'
 description = 'Shared library — common utilities, exceptions, security, and constants'
 
 java {
@@ -81,11 +81,24 @@ jacocoTestCoverageVerification {
 
 check.dependsOn jacocoTestCoverageVerification
 
-// Publish to local Maven repo so sibling projects can depend on it
+// Publish to GitHub Packages Maven registry
 publishing {
     publications {
         mavenJava(MavenPublication) {
             from components.java
+            groupId = 'dev.bored'
+            artifactId = 'common-lib'
+            version = '0.0.1'
+        }
+    }
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = uri('https://maven.pkg.github.com/boredsoftwaredeveloper/common-lib')
+            credentials {
+                username = System.getenv('GITHUB_ACTOR')
+                password = System.getenv('GITHUB_TOKEN')
+            }
         }
     }
 }
