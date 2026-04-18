@@ -1,0 +1,3 @@
+dev.bored.common.CommonLibAutoConfiguration
+dev.bored.common.web.CommonServletWebAutoConfiguration
+dev.bored.common.web.CommonReactiveWebAutoConfiguration

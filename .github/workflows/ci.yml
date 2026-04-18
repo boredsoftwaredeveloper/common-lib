@@ -26,5 +26,10 @@ jobs:
       - name: Build & test
         run: ./gradlew clean check
 
-      - name: Publish to local Maven repo
-        run: ./gradlew publishToMavenLocal
+      - name: Upload JaCoCo report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: build/reports/jacoco/test/html
+          if-no-files-found: ignore

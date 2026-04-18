@@ -5,14 +5,21 @@ plugins {
     id 'maven-publish'
 }
 
-group = 'dev.bored'
-version = '0.0.1'
+// group + version come from gradle.properties (0.0.1-SNAPSHOT by default)
 description = 'Shared library — common utilities, exceptions, security, and constants'
 
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
     }
+    // Publish sources + javadoc so IDEs can attach them in consumer projects.
+    withSourcesJar()
+    withJavadocJar()
+}
+
+// Tolerate missing javadoc comments — don't fail the build on doclint.
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('Xdoclint:none', '-quiet')
 }
 
 repositories {
@@ -36,6 +43,18 @@ dependencies {
     api 'jakarta.validation:jakarta.validation-api'
     api 'org.slf4j:slf4j-api'
 
+    // Auto-configuration wiring — lets services pick up the shared
+    // exception handler + CORS + JWT decoder beans without @ComponentScan.
+    api 'org.springframework.boot:spring-boot-autoconfigure'
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Optional webmvc / webflux — each service brings its own starter,
+    // we only need the types for conditional wiring.
+    compileOnly 'org.springframework:spring-webmvc'
+    compileOnly 'org.springframework:spring-webflux'
+
     // Lombok (compile-time only — each service needs its own)
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
@@ -43,6 +62,8 @@ dependencies {
     // ── Testing ──────────────────────────────────────────────
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-oauth2-jose'
+    testImplementation 'org.springframework:spring-webmvc'
+    testImplementation 'org.springframework:spring-webflux'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -68,7 +89,10 @@ jacocoTestCoverageVerification {
         rule {
             element = 'CLASS'
             excludes = [
-                    'dev.bored.common.constant.*'
+                    'dev.bored.common.constant.*',
+                    'dev.bored.common.CommonLibAutoConfiguration',
+                    'dev.bored.common.web.*',
+                    'dev.bored.common.exception.CommonExceptionHandler'
             ]
             limit {
                 counter = 'INSTRUCTION'
@@ -81,7 +105,9 @@ jacocoTestCoverageVerification {
 
 check.dependsOn jacocoTestCoverageVerification
 
-// Publish to GitHub Packages Maven registry
+// Publish to GitHub Packages Maven registry.
+// SNAPSHOT versions are re-publishable and Gradle refreshes them for consumers
+// (combined with `cacheChangingModulesFor 0s` on the consumer side).
 publishing {
     publications {
         mavenJava(MavenPublication) {
@@ -96,9 +122,19 @@ publishing {
                 }
             }
 
-            groupId = 'dev.bored'
             artifactId = 'common-lib'
-            version = '0.0.1'
+
+            pom {
+                name = 'common-lib'
+                description = project.description
+                url = 'https://github.com/boredsoftwaredeveloper/common-lib'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+            }
         }
     }
     repositories {
