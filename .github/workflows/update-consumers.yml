@@ -1,0 +1,135 @@
+# Manual fan-out: bump commonLibVersion in selected consumer repos.
+#
+# How to run: Actions → "Update consumers" → Run workflow.
+# Tick which services to bump, pick an environment, enter the new version.
+#
+# What it does:
+#   • Builds a JSON list of selected services from the boolean checkboxes
+#   • Maps env to target branch: dev→develop, staging→staging, prod→master
+#   • For each service, clones the consumer repo using CROSS_REPO_TOKEN,
+#     edits gradle.properties, opens a PR via peter-evans/create-pull-request,
+#     and enables auto-merge so the PR merges once required checks pass.
+#
+# Prerequisites:
+#   • CROSS_REPO_TOKEN secret in this repo — a PAT (classic or fine-grained) with
+#     `repo` + `workflow` scope on api-gateway / profile-service / stream-service.
+#   • Each consumer repo: "Allow auto-merge" enabled + "Allow Actions to create PRs".
+#   • Each consumer repo: develop + staging branches exist (master already does).
+
+name: Update consumers
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New commonLibVersion (e.g. 0.0.2)'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+      api_gateway:
+        description: 'Update api-gateway'
+        required: false
+        type: boolean
+        default: false
+      profile_service:
+        description: 'Update profile-service'
+        required: false
+        type: boolean
+        default: false
+      stream_service:
+        description: 'Update stream-service'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.list.outputs.services }}
+      target_branch: ${{ steps.list.outputs.target_branch }}
+    steps:
+      - id: list
+        run: |
+          services=()
+          [ "${{ inputs.api_gateway }}"     = "true" ] && services+=("api-gateway")
+          [ "${{ inputs.profile_service }}" = "true" ] && services+=("profile-service")
+          [ "${{ inputs.stream_service }}"  = "true" ] && services+=("stream-service")
+
+          if [ ${#services[@]} -eq 0 ]; then
+            echo "::error::No services selected. Tick at least one service checkbox."
+            exit 1
+          fi
+
+          json=$(printf '%s\n' "${services[@]}" | jq -R . | jq -s -c .)
+          echo "services=$json" >> "$GITHUB_OUTPUT"
+
+          case "${{ inputs.environment }}" in
+            dev)     target=develop ;;
+            staging) target=staging ;;
+            prod)    target=master  ;;
+          esac
+          echo "target_branch=$target" >> "$GITHUB_OUTPUT"
+          echo "::notice::Will bump $json on '$target' to ${{ inputs.version }}"
+
+  update:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.plan.outputs.services) }}
+
+    steps:
+      - name: Checkout ${{ matrix.service }}
+        uses: actions/checkout@v4
+        with:
+          repository: boredsoftwaredeveloper/${{ matrix.service }}
+          ref: ${{ needs.plan.outputs.target_branch }}
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+
+      - name: Bump commonLibVersion
+        run: |
+          sed -i "s/^commonLibVersion=.*/commonLibVersion=${{ inputs.version }}/" gradle.properties
+          echo "── gradle.properties ──"
+          cat gradle.properties
+
+      - name: Create pull request
+        id: pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+          branch: bump-common-lib/${{ inputs.version }}-${{ inputs.environment }}
+          base: ${{ needs.plan.outputs.target_branch }}
+          commit-message: "chore: bump common-lib to ${{ inputs.version }}"
+          title: "chore: bump common-lib → ${{ inputs.version }} [${{ inputs.environment }}]"
+          body: |
+            Automated bump from common-lib's **Update consumers** workflow.
+
+            | Field | Value |
+            | --- | --- |
+            | Service | `${{ matrix.service }}` |
+            | New common-lib version | `${{ inputs.version }}` |
+            | Environment | `${{ inputs.environment }}` |
+            | Target branch | `${{ needs.plan.outputs.target_branch }}` |
+
+            Auto-merge is enabled — this PR will merge once required checks pass.
+          delete-branch: true
+
+      - name: Enable auto-merge
+        if: steps.pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+        run: |
+          gh pr merge --auto --squash \
+            --repo boredsoftwaredeveloper/${{ matrix.service }} \
+            "${{ steps.pr.outputs.pull-request-number }}"

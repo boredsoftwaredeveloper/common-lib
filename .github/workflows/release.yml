@@ -1,0 +1,95 @@
+# Auto-release common-lib on every push to master.
+#
+# Reads the current version= from gradle.properties, strips -SNAPSHOT, bumps patch
+# (or honors a manual workflow_dispatch override), then builds, publishes to GitHub
+# Packages, commits the bumped version back with [skip ci], tags common-lib-vX.Y.Z,
+# and creates a GitHub Release.
+#
+# Replaces the simpler publish.yml that just published whatever was in gradle.properties.
+
+name: Release common-lib
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Override version (leave blank to auto-bump patch)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-common-lib
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Determine next version
+        id: ver
+        run: |
+          current=$(grep '^version=' gradle.properties | cut -d= -f2 | tr -d ' \r\n')
+          stripped=${current%-SNAPSHOT}
+          if [ -n "${{ inputs.version }}" ]; then
+            next="${{ inputs.version }}"
+          else
+            IFS='.' read -r major minor patch <<< "$stripped"
+            next="${major}.${minor}.$((patch + 1))"
+          fi
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "next=$next"       >> "$GITHUB_OUTPUT"
+          echo "::notice::common-lib $current → $next"
+
+      - name: Pin version in gradle.properties
+        run: |
+          sed -i "s/^version=.*/version=${{ steps.ver.outputs.next }}/" gradle.properties
+          cat gradle.properties
+
+      - name: Build & test
+        run: ./gradlew clean check --no-daemon
+
+      - name: Publish to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew publish --no-daemon
+
+      - name: Commit version bump & tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gradle.properties
+          git commit -m "chore: release v${{ steps.ver.outputs.next }} [skip ci]"
+          git tag "common-lib-v${{ steps.ver.outputs.next }}"
+          git push origin HEAD:master --follow-tags
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "common-lib-v${{ steps.ver.outputs.next }}" \
+            --title "common-lib v${{ steps.ver.outputs.next }}" \
+            --notes "Auto-released by CI. Use the *Update consumers* workflow to roll this out to api-gateway / profile-service / stream-service."
